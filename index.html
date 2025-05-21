@@ -32,7 +32,8 @@
   let bullets = [];
   let asteroids = [];
   let score = 0;
-  let gameOver = false;
+  let lives = 3;
+  let invincibleFrames = 0;
 
   function spawnAsteroid(x, y, size = 3) {
     const angle = Math.random() * Math.PI * 2;
@@ -61,7 +62,7 @@
   }
 
   function update() {
-    if (gameOver) return;
+    if (lives <= 0) return;
 
     // Rotate
     if (KEY["ArrowLeft"]) ship.angle -= 0.05;
@@ -76,7 +77,7 @@
     // Fire
     if (KEY["Space"] && bullets.length < 5) {
       shoot();
-      KEY["Space"] = false; // single shot per press
+      KEY["Space"] = false; // one bullet per keypress
     }
 
     // Move ship
@@ -86,7 +87,7 @@
     ship.vel.y *= 0.99;
     wrap(ship);
 
-    // Bullets
+    // Update bullets
     bullets = bullets.filter(b => b.life-- > 0);
     bullets.forEach(b => {
       b.x += b.vx;
@@ -94,7 +95,7 @@
       wrap(b);
     });
 
-    // Asteroids
+    // Update asteroids
     asteroids.forEach(a => {
       a.x += a.vx;
       a.y += a.vy;
@@ -108,7 +109,6 @@
           bullets.splice(bi, 1);
           asteroids.splice(ai, 1);
           score += 100 * a.size;
-
           if (a.size > 1) {
             for (let i = 0; i < 2; i++) {
               spawnAsteroid(a.x, a.y, a.size - 1);
@@ -119,11 +119,24 @@
     });
 
     // Ship-Asteroid collision
-    asteroids.forEach(a => {
-      if (distance(ship, a) < a.size * 15 + ship.radius) {
-        gameOver = true;
-      }
-    });
+    if (invincibleFrames <= 0) {
+      asteroids.forEach(a => {
+        if (distance(ship, a) < a.size * 15 + ship.radius) {
+          // Bounce logic: reflect velocity
+          const dx = ship.x - a.x;
+          const dy = ship.y - a.y;
+          const angle = Math.atan2(dy, dx);
+          const speed = Math.hypot(ship.vel.x, ship.vel.y);
+          ship.vel.x = Math.cos(angle) * speed;
+          ship.vel.y = Math.sin(angle) * speed;
+
+          lives -= 1;
+          invincibleFrames = 60; // 1 second of invincibility
+        }
+      });
+    } else {
+      invincibleFrames--;
+    }
   }
 
   function wrap(obj) {
@@ -142,7 +155,7 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw ship
-    if (!gameOver) {
+    if (lives > 0) {
       ctx.save();
       ctx.translate(ship.x, ship.y);
       ctx.rotate(ship.angle);
@@ -151,7 +164,7 @@
       ctx.lineTo(-10, -10);
       ctx.lineTo(-10, 10);
       ctx.closePath();
-      ctx.strokeStyle = "white";
+      ctx.strokeStyle = invincibleFrames > 0 ? "yellow" : "white";
       ctx.stroke();
       ctx.restore();
     }
@@ -168,12 +181,16 @@
       ctx.stroke();
     });
 
-    // Draw score
+    // Score
     ctx.fillStyle = "white";
     ctx.font = "20px monospace";
     ctx.fillText("Score: " + score, 20, 30);
 
-    if (gameOver) {
+    // Lives
+    ctx.fillText("Lives: " + lives, 20, 60);
+
+    // Game Over
+    if (lives <= 0) {
       ctx.fillStyle = "red";
       ctx.font = "60px sans-serif";
       ctx.fillText("GAME OVER", canvas.width / 2 - 180, canvas.height / 2);
