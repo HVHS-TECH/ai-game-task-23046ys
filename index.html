@@ -21,19 +21,31 @@
   document.addEventListener("keydown", e => KEY[e.code] = true);
   document.addEventListener("keyup", e => KEY[e.code] = false);
 
-  let ship = {
-    x: canvas.width / 2,
-    y: canvas.height / 2,
-    angle: 0,
-    vel: { x: 0, y: 0 },
-    radius: 15
-  };
+  let gameState = "menu"; // 'menu', 'playing', 'gameover'
+  let score, lives, ship, bullets, asteroids, invincibleFrames, gameOverTime;
+  let explosionParticles = [];
 
-  let bullets = [];
-  let asteroids = [];
-  let score = 0;
-  let lives = 3;
-  let invincibleFrames = 0;
+  function initGame() {
+    score = 0;
+    lives = 3;
+    invincibleFrames = 0;
+    bullets = [];
+    asteroids = [];
+    explosionParticles = [];
+
+    ship = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      angle: 0,
+      vel: { x: 0, y: 0 },
+      radius: 15,
+      alive: true
+    };
+
+    for (let i = 0; i < 5; i++) {
+      spawnAsteroid(Math.random() * canvas.width, Math.random() * canvas.height);
+    }
+  }
 
   function spawnAsteroid(x, y, size = 3) {
     const angle = Math.random() * Math.PI * 2;
@@ -44,10 +56,6 @@
       vy: Math.sin(angle) * speed,
       size
     });
-  }
-
-  for (let i = 0; i < 5; i++) {
-    spawnAsteroid(Math.random() * canvas.width, Math.random() * canvas.height);
   }
 
   function shoot() {
@@ -61,23 +69,57 @@
     });
   }
 
-  function update() {
-    if (lives <= 0) return;
+  function createExplosion(x, y, count = 20) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 3 + 1;
+      explosionParticles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: 2 + Math.random() * 3,
+        life: 60
+      });
+    }
+  }
 
-    // Rotate
+  function update() {
+    if (gameState === "menu") {
+      if (KEY["Enter"] || KEY["Space"]) {
+        gameState = "playing";
+        initGame();
+      }
+      return;
+    }
+
+    if (gameState === "gameover") {
+      // Update explosion particles
+      explosionParticles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.radius *= 0.96;
+        p.life--;
+      });
+      explosionParticles = explosionParticles.filter(p => p.life > 0);
+
+      if (Date.now() - gameOverTime >= 5000) {
+        gameState = "menu";
+      }
+      return;
+    }
+
+    // Controls
     if (KEY["ArrowLeft"]) ship.angle -= 0.05;
     if (KEY["ArrowRight"]) ship.angle += 0.05;
 
-    // Thrust
     if (KEY["ArrowUp"]) {
       ship.vel.x += Math.cos(ship.angle) * 0.1;
       ship.vel.y += Math.sin(ship.angle) * 0.1;
     }
 
-    // Fire
     if (KEY["Space"] && bullets.length < 5) {
       shoot();
-      KEY["Space"] = false; // one bullet per keypress
+      KEY["Space"] = false;
     }
 
     // Move ship
@@ -87,7 +129,7 @@
     ship.vel.y *= 0.99;
     wrap(ship);
 
-    // Update bullets
+    // Bullets
     bullets = bullets.filter(b => b.life-- > 0);
     bullets.forEach(b => {
       b.x += b.vx;
@@ -95,7 +137,7 @@
       wrap(b);
     });
 
-    // Update asteroids
+    // Asteroids
     asteroids.forEach(a => {
       a.x += a.vx;
       a.y += a.vy;
@@ -118,11 +160,10 @@
       });
     });
 
-    // Ship-Asteroid collision
+    // Ship-Asteroid collisions
     if (invincibleFrames <= 0) {
       asteroids.forEach(a => {
         if (distance(ship, a) < a.size * 15 + ship.radius) {
-          // Bounce logic: reflect velocity
           const dx = ship.x - a.x;
           const dy = ship.y - a.y;
           const angle = Math.atan2(dy, dx);
@@ -130,12 +171,82 @@
           ship.vel.x = Math.cos(angle) * speed;
           ship.vel.y = Math.sin(angle) * speed;
 
-          lives -= 1;
-          invincibleFrames = 60; // 1 second of invincibility
+          lives--;
+          invincibleFrames = 60;
+
+          if (lives <= 0) {
+            createExplosion(ship.x, ship.y);
+            ship.alive = false;
+            gameState = "gameover";
+            gameOverTime = Date.now();
+          }
         }
       });
     } else {
       invincibleFrames--;
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (gameState === "menu") {
+      ctx.fillStyle = "white";
+      ctx.font = "50px sans-serif";
+      ctx.fillText("ASTEROIDS", canvas.width / 2 - 150, canvas.height / 2 - 50);
+      ctx.font = "30px monospace";
+      ctx.fillText("Press ENTER or SPACE to Start", canvas.width / 2 - 200, canvas.height / 2 + 20);
+      return;
+    }
+
+    if (gameState === "playing" || gameState === "gameover") {
+      if (ship.alive) {
+        ctx.save();
+        ctx.translate(ship.x, ship.y);
+        ctx.rotate(ship.angle);
+        ctx.beginPath();
+        ctx.moveTo(15, 0);
+        ctx.lineTo(-10, -10);
+        ctx.lineTo(-10, 10);
+        ctx.closePath();
+        ctx.strokeStyle = invincibleFrames > 0 ? "yellow" : "white";
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.fillStyle = "white";
+      bullets.forEach(b => ctx.fillRect(b.x - 2, b.y - 2, 4, 4));
+
+      asteroids.forEach(a => {
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, a.size * 15, 0, Math.PI * 2);
+        ctx.strokeStyle = "white";
+        ctx.stroke();
+      });
+
+      // Explosion particles
+      explosionParticles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,165,0,${p.life / 60})`;
+        ctx.fill();
+      });
+
+      // UI
+      ctx.fillStyle = "white";
+      ctx.font = "20px monospace";
+      ctx.fillText("Score: " + score, 20, 30);
+      ctx.fillText("Lives: " + lives, 20, 60);
+    }
+
+    if (gameState === "gameover") {
+      ctx.fillStyle = "red";
+      ctx.font = "60px sans-serif";
+      ctx.fillText("GAME OVER", canvas.width / 2 - 180, canvas.height / 2);
+      ctx.fillStyle = "white";
+      ctx.font = "20px monospace";
+      ctx.fillText("Returning to menu in 5 seconds...", canvas.width / 2 - 150, canvas.height / 2 + 50);
     }
   }
 
@@ -148,53 +259,6 @@
 
   function distance(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
-  }
-
-  function draw() {
-    ctx.fillStyle = "black";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw ship
-    if (lives > 0) {
-      ctx.save();
-      ctx.translate(ship.x, ship.y);
-      ctx.rotate(ship.angle);
-      ctx.beginPath();
-      ctx.moveTo(15, 0);
-      ctx.lineTo(-10, -10);
-      ctx.lineTo(-10, 10);
-      ctx.closePath();
-      ctx.strokeStyle = invincibleFrames > 0 ? "yellow" : "white";
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Draw bullets
-    ctx.fillStyle = "white";
-    bullets.forEach(b => ctx.fillRect(b.x - 2, b.y - 2, 4, 4));
-
-    // Draw asteroids
-    asteroids.forEach(a => {
-      ctx.beginPath();
-      ctx.arc(a.x, a.y, a.size * 15, 0, Math.PI * 2);
-      ctx.strokeStyle = "white";
-      ctx.stroke();
-    });
-
-    // Score
-    ctx.fillStyle = "white";
-    ctx.font = "20px monospace";
-    ctx.fillText("Score: " + score, 20, 30);
-
-    // Lives
-    ctx.fillText("Lives: " + lives, 20, 60);
-
-    // Game Over
-    if (lives <= 0) {
-      ctx.fillStyle = "red";
-      ctx.font = "60px sans-serif";
-      ctx.fillText("GAME OVER", canvas.width / 2 - 180, canvas.height / 2);
-    }
   }
 
   function loop() {
