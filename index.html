@@ -12,125 +12,137 @@
 <body>
 <canvas id="game"></canvas>
   <script>
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+     const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 
-    const KEY = {};
-    document.addEventListener("keydown", e => KEY[e.code] = true);
-    document.addEventListener("keyup", e => KEY[e.code] = false);
+  const KEY = {};
+  document.addEventListener("keydown", e => KEY[e.code] = true);
+  document.addEventListener("keyup", e => KEY[e.code] = false);
 
-    // Game objects
-    let ship = {
-      x: canvas.width / 2,
-      y: canvas.height / 2,
-      angle: 0,
-      vel: { x: 0, y: 0 },
-      radius: 15
-    };
+  let ship = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    angle: 0,
+    vel: { x: 0, y: 0 },
+    radius: 15
+  };
 
-    let bullets = [];
-    let asteroids = [];
+  let bullets = [];
+  let asteroids = [];
+  let score = 0;
+  let gameOver = false;
 
-    function spawnAsteroid(x, y, size = 3) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 1.5 + 0.5;
-      asteroids.push({
-        x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size
-      });
+  function spawnAsteroid(x, y, size = 3) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 1.5 + 0.5;
+    asteroids.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size
+    });
+  }
+
+  for (let i = 0; i < 5; i++) {
+    spawnAsteroid(Math.random() * canvas.width, Math.random() * canvas.height);
+  }
+
+  function shoot() {
+    const speed = 5;
+    bullets.push({
+      x: ship.x + Math.cos(ship.angle) * ship.radius,
+      y: ship.y + Math.sin(ship.angle) * ship.radius,
+      vx: Math.cos(ship.angle) * speed,
+      vy: Math.sin(ship.angle) * speed,
+      life: 60
+    });
+  }
+
+  function update() {
+    if (gameOver) return;
+
+    // Rotate
+    if (KEY["ArrowLeft"]) ship.angle -= 0.05;
+    if (KEY["ArrowRight"]) ship.angle += 0.05;
+
+    // Thrust
+    if (KEY["ArrowUp"]) {
+      ship.vel.x += Math.cos(ship.angle) * 0.1;
+      ship.vel.y += Math.sin(ship.angle) * 0.1;
     }
 
-    for (let i = 0; i < 5; i++) {
-      spawnAsteroid(Math.random() * canvas.width, Math.random() * canvas.height);
+    // Fire
+    if (KEY["Space"] && bullets.length < 5) {
+      shoot();
+      KEY["Space"] = false; // single shot per press
     }
 
-    function shoot() {
-      const speed = 5;
-      bullets.push({
-        x: ship.x + Math.cos(ship.angle) * ship.radius,
-        y: ship.y + Math.sin(ship.angle) * ship.radius,
-        vx: Math.cos(ship.angle) * speed,
-        vy: Math.sin(ship.angle) * speed,
-        life: 60
-      });
-    }
+    // Move ship
+    ship.x += ship.vel.x;
+    ship.y += ship.vel.y;
+    ship.vel.x *= 0.99;
+    ship.vel.y *= 0.99;
+    wrap(ship);
 
-    function update() {
-      // Rotate
-      if (KEY["ArrowLeft"]) ship.angle -= 0.05;
-      if (KEY["ArrowRight"]) ship.angle += 0.05;
+    // Bullets
+    bullets = bullets.filter(b => b.life-- > 0);
+    bullets.forEach(b => {
+      b.x += b.vx;
+      b.y += b.vy;
+      wrap(b);
+    });
 
-      // Thrust
-      if (KEY["ArrowUp"]) {
-        ship.vel.x += Math.cos(ship.angle) * 0.1;
-        ship.vel.y += Math.sin(ship.angle) * 0.1;
-      }
+    // Asteroids
+    asteroids.forEach(a => {
+      a.x += a.vx;
+      a.y += a.vy;
+      wrap(a);
+    });
 
-      // Fire
-      if (KEY["Space"] && bullets.length < 5) {
-        shoot();
-        KEY["Space"] = false; // single shot per press
-      }
+    // Bullet-Asteroid collisions
+    bullets.forEach((b, bi) => {
+      asteroids.forEach((a, ai) => {
+        if (distance(b, a) < a.size * 15) {
+          bullets.splice(bi, 1);
+          asteroids.splice(ai, 1);
+          score += 100 * a.size;
 
-      // Move ship
-      ship.x += ship.vel.x;
-      ship.y += ship.vel.y;
-      ship.vel.x *= 0.99;
-      ship.vel.y *= 0.99;
-
-      wrap(ship);
-
-      // Update bullets
-      bullets = bullets.filter(b => b.life-- > 0);
-      bullets.forEach(b => {
-        b.x += b.vx;
-        b.y += b.vy;
-        wrap(b);
-      });
-
-      // Update asteroids
-      asteroids.forEach(a => {
-        a.x += a.vx;
-        a.y += a.vy;
-        wrap(a);
-      });
-
-      // Bullet-Asteroid collisions
-      bullets.forEach((b, bi) => {
-        asteroids.forEach((a, ai) => {
-          if (distance(b, a) < a.size * 15) {
-            bullets.splice(bi, 1);
-            asteroids.splice(ai, 1);
-            if (a.size > 1) {
-              for (let i = 0; i < 2; i++) {
-                spawnAsteroid(a.x, a.y, a.size - 1);
-              }
+          if (a.size > 1) {
+            for (let i = 0; i < 2; i++) {
+              spawnAsteroid(a.x, a.y, a.size - 1);
             }
           }
-        });
+        }
       });
-    }
+    });
 
-    function wrap(obj) {
-      if (obj.x < 0) obj.x = canvas.width;
-      if (obj.x > canvas.width) obj.x = 0;
-      if (obj.y < 0) obj.y = canvas.height;
-      if (obj.y > canvas.height) obj.y = 0;
-    }
+    // Ship-Asteroid collision
+    asteroids.forEach(a => {
+      if (distance(ship, a) < a.size * 15 + ship.radius) {
+        gameOver = true;
+      }
+    });
+  }
 
-    function distance(a, b) {
-      return Math.hypot(a.x - b.x, a.y - b.y);
-    }
+  function wrap(obj) {
+    if (obj.x < 0) obj.x = canvas.width;
+    if (obj.x > canvas.width) obj.x = 0;
+    if (obj.y < 0) obj.y = canvas.height;
+    if (obj.y > canvas.height) obj.y = 0;
+  }
 
-    function draw() {
-      ctx.fillStyle = "black";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+  function distance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
 
-      // Draw ship
+  function draw() {
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw ship
+    if (!gameOver) {
       ctx.save();
       ctx.translate(ship.x, ship.y);
       ctx.rotate(ship.angle);
@@ -142,27 +154,39 @@
       ctx.strokeStyle = "white";
       ctx.stroke();
       ctx.restore();
-
-      // Draw bullets
-      ctx.fillStyle = "white";
-      bullets.forEach(b => ctx.fillRect(b.x - 2, b.y - 2, 4, 4));
-
-      // Draw asteroids
-      asteroids.forEach(a => {
-        ctx.beginPath();
-        ctx.arc(a.x, a.y, a.size * 15, 0, Math.PI * 2);
-        ctx.strokeStyle = "white";
-        ctx.stroke();
-      });
     }
 
-    function loop() {
-      update();
-      draw();
-      requestAnimationFrame(loop);
-    }
+    // Draw bullets
+    ctx.fillStyle = "white";
+    bullets.forEach(b => ctx.fillRect(b.x - 2, b.y - 2, 4, 4));
 
-    loop();
+    // Draw asteroids
+    asteroids.forEach(a => {
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, a.size * 15, 0, Math.PI * 2);
+      ctx.strokeStyle = "white";
+      ctx.stroke();
+    });
+
+    // Draw score
+    ctx.fillStyle = "white";
+    ctx.font = "20px monospace";
+    ctx.fillText("Score: " + score, 20, 30);
+
+    if (gameOver) {
+      ctx.fillStyle = "red";
+      ctx.font = "60px sans-serif";
+      ctx.fillText("GAME OVER", canvas.width / 2 - 180, canvas.height / 2);
+    }
+  }
+
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  loop();
   </script></body>
 </html>
 
